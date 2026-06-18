@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EMMVEE Pump Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: #2e3349;
+    --text: #e8eaf0;
+    --text2: #8b90a8;
+    --text3: #555c78;
+    --green: #1db980;
+    --green-bg: #0d2e20;
+    --red: #e84040;
+    --red-bg: #2d1010;
+    --amber: #f0a020;
+    --amber-bg: #2d2008;
+    --blue: #3b82f6;
+    --blue-bg: #0d1e3a;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* NAV */
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 100; }
+  .nav-logo { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -.3px; }
+  .nav-logo span { color: var(--green); }
+  .nav-right { display: flex; gap: 8px; align-items: center; }
+  .nav-btn { background: var(--green); color: #fff; border: none; border-radius: var(--radius-sm); padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+  .nav-badge { font-size: 11px; background: var(--bg3); color: var(--text2); border-radius: 20px; padding: 3px 9px; }
+
+  /* SUMMARY */
+  .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 12px 16px; }
+  .scard { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .scard-label { font-size: 11px; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .scard-val { font-size: 26px; font-weight: 700; }
+  .scard.run .scard-val { color: var(--green); }
+  .scard.stp .scard-val { color: var(--amber); }
+  .scard.flt .scard-val { color: var(--red); }
+  .scard.pm .scard-val { color: var(--blue); }
+
+  /* TABS */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { font-size: 13px; padding: 10px 12px; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500; }
+  .tab.active { color: var(--text); border-bottom: 2px solid var(--green); }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); cursor: pointer; white-space: nowrap; }
+  .chip.active { background: var(--green); color: #fff; border-color: var(--green); }
+
+  .search-row { padding: 0 16px 10px; }
+  .search-row input { width: 100%; padding: 9px 13px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg2); color: var(--text); }
+  .search-row input::placeholder { color: var(--text3); }
+  .search-row input:focus { outline: none; border-color: var(--green); }
+
+  /* PUMP CARDS */
+  .pump-list { padding: 0 16px 80px; }
+  .pump-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color .15s; }
+  .pump-card:active { border-color: var(--green); }
+  .pump-card.expanded { border-color: #3d4260; }
+  .pc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .pc-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .pc-id { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .badge { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .badge.run { background: var(--green-bg); color: var(--green); }
+  .badge.stp { background: var(--amber-bg); color: var(--amber); }
+  .badge.flt { background: var(--red-bg); color: var(--red); }
+  .badge.ov { background: var(--blue-bg); color: var(--blue); }
+  .pc-meta { display: flex; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+  .pc-meta-item { font-size: 12px; color: var(--text2); }
+  .pc-meta-item strong { color: var(--text); }
+
+  /* EXPAND */
+  .pc-expand { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; display: none; }
+  .pump-card.expanded .pc-expand { display: block; }
+  .sec-label { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin: 12px 0 6px; }
+  .sec-label:first-child { margin-top: 0; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .drow { background: var(--bg3); padding: 8px 10px; }
+  .drow-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .04em; }
+  .drow-val { font-size: 13px; color: var(--text); font-weight: 500; margin-top: 2px; }
+  .pm-wrap { margin-top: 4px; }
+  .pm-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .pm-bar-bg { height: 4px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+  .pm-bar { height: 100%; border-radius: 4px; transition: width .4s; }
+  .fault-list { margin-top: 4px; }
+  .fault-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .fault-item:last-child { border-bottom: none; }
+  .fault-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; background: var(--red); }
+  .fault-dot.warn { background: var(--amber); }
+  .fault-text { font-size: 12px; color: var(--text); }
+  .fault-date { font-size: 11px; color: var(--text2); margin-top: 1px; }
+  .action-row { display: flex; gap: 8px; margin-top: 12px; }
+  .action-btn { flex: 1; font-size: 12px; padding: 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg3); color: var(--text); cursor: pointer; text-align: center; font-weight: 500; }
+  .action-btn.del { color: var(--red); border-color: var(--red-bg); }
+  .action-btn:active { opacity: .7; }
+
+  /* AREA/TYPE TABS */
+  .area-sec { border-bottom: 1px solid var(--border); padding: 14px 16px; }
+  .area-sec-title { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .area-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .area-row:last-child { border-bottom: none; }
+  .area-pump-name { font-size: 13px; color: var(--text); }
+  .area-pump-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
+
+  /* PM TAB */
+  .pm-item { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .pm-item-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .pm-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .pm-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
+  .pm-due { font-size: 12px; font-weight: 600; text-align: right; }
+
+  /* MODAL OVERLAY */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; overflow-y: auto; }
+  .overlay.open { display: block; }
+  .modal { background: var(--bg2); border-radius: var(--radius) var(--radius) 0 0; margin-top: 60px; min-height: calc(100vh - 60px); padding: 0 0 80px; }
+  .modal-hdr { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg2); z-index: 10; }
+  .modal-title { font-size: 15px; font-weight: 600; }
+  .modal-close { background: var(--bg3); border: none; color: var(--text2); font-size: 18px; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+  /* FORM */
+  .form-wrap { padding: 16px; }
+  .step-bar { display: flex; gap: 0; margin-bottom: 20px; }
+  .step { flex: 1; text-align: center; position: relative; }
+  .step-line { position: absolute; top: 14px; left: 50%; width: 100%; height: 1px; background: var(--border); z-index: 0; }
+  .step:last-child .step-line { display: none; }
+  .step-dot { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg3); display: flex; align-items: center; justify-content: center; margin: 0 auto 4px; font-size: 12px; font-weight: 600; color: var(--text2); position: relative; z-index: 1; transition: all .2s; }
+  .step.done .step-dot { background: var(--green); border-color: var(--green); color: #fff; }
+  .step.active .step-dot { background: var(--text); border-color: var(--text); color: var(--bg); }
+  .step-lbl { font-size: 10px; color: var(--text2); }
+  .step.active .step-lbl { color: var(--text); font-weight: 600; }
+  .form-sec { display: none; }
+  .form-sec.active { display: block; }
+  .form-sec-title { font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+  .form-sec-sub { font-size: 12px; color: var(--text2); margin-bottom: 16px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; }
+  .field input, .field select, .field textarea { width: 100%; padding: 9px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg3); color: var(--text); }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--green); }
+  .field textarea { height: 72px; resize: none; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .field-row .field { margin-bottom: 0; }
+  .radio-group { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 2px; }
+  .rbtn { padding: 6px 13px; border-radius: 20px; border: 1px solid var(--border); font-size: 12px; color: var(--text2); cursor: pointer; background: var(--bg3); }
+  .rbtn.active { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
+  .field-err { font-size: 11px; color: var(--red); margin-top: 3px; display: none; }
+  .field-err.show { display: block; }
+  .nav-row { display: flex; gap: 10px; margin-top: 20px; }
+  .nav-row button { flex: 1; padding: 12px; font-size: 13px; font-weight: 600; border-radius: var(--radius-sm); border: 1px solid var(--border); cursor: pointer; }
+  .nav-row .btn-back { background: transparent; color: var(--text2); }
+  .nav-row .btn-next { background: var(--green); color: #fff; border-color: var(--green); }
+  .nav-row .btn-save { background: var(--green); color: #fff; border-color: var(--green); }
+  .review-block { background: var(--bg3); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 10px; }
+  .review-title { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .review-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .review-row:last-child { border-bottom: none; }
+  .review-label { color: var(--text2); }
+  .review-val { color: var(--text); font-weight: 500; text-align: right; max-width: 55%; }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 18px; font-size: 13px; font-weight: 500; z-index: 999; transition: transform .3s; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.ok { border-color: var(--green); color: var(--green); }
+  .toast.err { border-color: var(--red); color: var(--red); }
+
+  /* LOADING */
+  .loader { text-align: center; padding: 40px 16px; color: var(--text2); font-size: 13px; }
+  .spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 40px 16px; color: var(--text2); font-size: 13px; }
+  .empty-icon { font-size: 32px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">EMMVEE <span>Pump Monitor</span></div>
+  <div class="nav-right">
+    <span class="nav-badge" id="total-badge">— pumps</span>
+    <button class="nav-btn" onclick="openForm()">+ Add pump</button>
+  </div>
+</nav>
+
+<div class="summary">
+  <div class="scard run"><div class="scard-label">Running</div><div class="scard-val" id="cnt-run">—</div></div>
+  <div class="scard stp"><div class="scard-label">Stopped</div><div class="scard-val" id="cnt-stp">—</div></div>
+  <div class="scard flt"><div class="scard-label">Fault</div><div class="scard-val" id="cnt-flt">—</div></div>
+  <div class="scard pm"><div class="scard-label">PM Overdue</div><div class="scard-val" id="cnt-pm">—</div></div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('all',this)">All Pumps</div>
+  <div class="tab" onclick="switchTab('area',this)">By Area</div>
+  <div class="tab" onclick="switchTab('type',this)">By Type</div>
+  <div class="tab" onclick="switchTab('pm',this)">PM Schedule</div>
+</div>
+
+<!-- ALL PUMPS TAB -->
+<div id="tab-all">
+  <div class="filters">
+    <div class="chip active" onclick="setFilter('all',this)">All</div>
+    <div class="chip" onclick="setFilter('Running',this)">Running</div>
+    <div class="chip" onclick="setFilter('Stopped',this)">Stopped</div>
+    <div class="chip" onclick="setFilter('Fault',this)">Fault</div>
+    <div class="chip" onclick="setFilter('overdue',this)">PM Overdue</div>
+  </div>
+  <div class="search-row"><input type="text" id="search" placeholder="Search tag, name, area..." oninput="renderAll()"></div>
+  <div class="pump-list" id="pump-list"><div class="loader"><div class="spinner"></div>Loading pumps...</div></div>
+</div>
+
+<!-- AREA TAB -->
+<div id="tab-area" style="display:none;padding-bottom:60px"></div>
+
+<!-- TYPE TAB -->
+<div id="tab-type" style="display:none;padding-bottom:60px"></div>
+
+<!-- PM TAB -->
+<div id="tab-pm" style="display:none;padding-bottom:60px"></div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="modal-title">Add new pump</div>
+      <button class="modal-close" onclick="closeForm()">✕</button>
+    </div>
+    <div class="form-wrap">
+      <div class="step-bar">
+        <div class="step active" id="fs1"><div class="step-line"></div><div class="step-dot">1</div><div class="step-lbl">ID</div></div>
+        <div class="step" id="fs2"><div class="step-line"></div><div class="step-dot">2</div><div class="step-lbl">Motor</div></div>
+        <div class="step" id="fs3"><div class="step-line"></div><div class="step-dot">3</div><div class="step-lbl">Pump</div></div>
+        <div class="step" id="fs4"><div class="step-dot">4</div><div class="step-lbl">PM</div></div>
+      </div>
+
+      <!-- STEP 1 -->
+      <div class="form-sec active" id="fsec1">
+        <div class="form-sec-title">Pump identification</div>
+        <div class="form-sec-sub">Basic details and location</div>
+        <div class="field"><label>Pump tag / asset ID *</label><input id="f-tag" type="text" placeholder="e.g. ZLD-P-015"><div class="field-err" id="e-tag">Required</div></div>
+        <div class="field"><label>Pump name / description *</label><input id="f-name" type="text" placeholder="e.g. Condensate Return Pump"><div class="field-err" id="e-name">Required</div></div>
+        <div class="field">
+          <label>Area *</label>
+          <select id="f-area">
+            <option value="">Select area...</option>
+            <option>ZLD Plant</option><option>Cooling Tower</option><option>HVAC</option>
+            <option>WTP</option><option>Chemical House</option><option>Utility Block</option><option>Other</option>
+          </select>
+          <div class="field-err" id="e-area">Required</div>
+        </div>
+        <div class="field"><label>System / service</label><input id="f-system" type="text" placeholder="e.g. MEE Feed, Chilled Water"></div>
+        <div class="field"><label>Pump type</label>
+          <div class="radio-group" id="rg-type">
+            <div class="rbtn active" onclick="pick(this,'rg-type')">Centrifugal</div>
+            <div class="rbtn" onclick="pick(this,'rg-type')">AODD</div>
+            <div class="rbtn" onclick="pick(this,'rg-type')">Metering</div>
+            <div class="rbtn" onclick="pick(this,'rg-type')">Axial flow</div>
+            <div class="rbtn" onclick="pick(this,'rg-type')">Screw</div>
+            <div class="rbtn" onclick="pick(this,'rg-type')">Other</div>
+          </div>
+        </div>
+        <div class="nav-row"><button class="btn-next" onclick="goStep(2)">Next →</button></div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="form-sec" id="fsec2">
+        <div class="form-sec-title">Motor details</div>
+        <div class="form-sec-sub">Drive and motor specifications</div>
+        <div class="field-row">
+          <div class="field"><label>Motor power (kW)</label><input id="f-kw" type="number" placeholder="22" min="0"></div>
+          <div class="field"><label>Speed (RPM)</label><input id="f-rpm" type="number" placeholder="1450" min="0"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Voltage</label><input id="f-volt" type="text" placeholder="415V"></div>
+          <div class="field"><label>IE frame</label>
+            <select id="f-ie"><option value="">—</option><option>IE1</option><option>IE2</option><option>IE3</option><option>IE4</option></select>
+          </div>
+        </div>
+        <div class="field"><label>Motor brand</label><input id="f-mbrand" type="text" placeholder="e.g. ABB, Siemens, Crompton"></div>
+        <div class="field-row">
+          <div class="field"><label>Bearing DE</label><input id="f-bde" type="text" placeholder="e.g. 6316"></div>
+          <div class="field"><label>Bearing NDE</label><input id="f-bnde" type="text" placeholder="e.g. 6308"></div>
+        </div>
+        <div class="field"><label>Drive arrangement</label>
+          <div class="radio-group" id="rg-drive">
+            <div class="rbtn active" onclick="pick(this,'rg-drive')">Direct / coupling</div>
+            <div class="rbtn" onclick="pick(this,'rg-drive')">Belt drive</div>
+            <div class="rbtn" onclick="pick(this,'rg-drive')">Gearbox</div>
+            <div class="rbtn" onclick="pick(this,'rg-drive')">Pneumatic</div>
+          </div>
+        </div>
+        <div class="nav-row">
+          <button class="btn-back" onclick="goStep(1)">← Back</button>
+          <button class="btn-next" onclick="goStep(3)">Next →</button>
+        </div>
+      </div>
+
+      <!-- STEP 3 -->
+      <div class="form-sec" id="fsec3">
+        <div class="form-sec-title">Pump details</div>
+        <div class="form-sec-sub">Hydraulic and mechanical data</div>
+        <div class="field"><label>Pump brand</label><input id="f-pbrand" type="text" placeholder="e.g. Kirloskar, KSB, Grundfos"></div>
+        <div class="field-row">
+          <div class="field"><label>Flow rate (LPH)</label><input id="f-flow" type="number" placeholder="18000" min="0"></div>
+          <div class="field"><label>Total head (m)</label><input id="f-head" type="number" placeholder="32" min="0"></div>
+        </div>
+        <div class="field"><label>Fluid handled</label><input id="f-fluid" type="text" placeholder="e.g. Process liquor, RO water"></div>
+        <div class="field"><label>Seal type</label>
+          <div class="radio-group" id="rg-seal">
+            <div class="rbtn active" onclick="pick(this,'rg-seal')">Mechanical</div>
+            <div class="rbtn" onclick="pick(this,'rg-seal')">Gland packing</div>
+            <div class="rbtn" onclick="pick(this,'rg-seal')">Diaphragm</div>
+            <div class="rbtn" onclick="pick(this,'rg-seal')">Mag. coupled</div>
+          </div>
+        </div>
+        <div class="field"><label>Current status</label>
+          <div class="radio-group" id="rg-status">
+            <div class="rbtn active" onclick="pick(this,'rg-status')" style="background:#0d2e20;color:#1db980;border-color:#1db980">Running</div>
+            <div class="rbtn" onclick="pick(this,'rg-status')">Stopped</div>
+            <div class="rbtn" onclick="pick(this,'rg-status')" style="color:#e84040;border-color:#e84040">Fault</div>
+          </div>
+        </div>
+        <div class="field"><label>Remarks</label><textarea id="f-remarks" placeholder="Observations, recent repairs, notes..."></textarea></div>
+        <div class="nav-row">
+          <button class="btn-back" onclick="goStep(2)">← Back</button>
+          <button class="btn-next" onclick="goStep(4)">Next →</button>
+        </div>
+      </div>
+
+      <!-- STEP 4 -->
+      <div class="form-sec" id="fsec4">
+        <div class="form-sec-title">PM & maintenance</div>
+        <div class="form-sec-sub">Preventive maintenance schedule</div>
+        <div class="field-row">
+          <div class="field"><label>Last PM date</label><input id="f-lastpm" type="date"></div>
+          <div class="field"><label>PM interval</label>
+            <select id="f-pmint">
+              <option value="">Select...</option>
+              <option value="30">Monthly (30d)</option>
+              <option value="45">45 days</option>
+              <option value="60">Bi-monthly (60d)</option>
+              <option value="90">Quarterly (90d)</option>
+              <option value="120">4-monthly (120d)</option>
+              <option value="180">Half-yearly (180d)</option>
+              <option value="365">Yearly (365d)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Assigned technician</label><input id="f-tech" type="text" placeholder="e.g. Rajan K, Suresh M"></div>
+        <div class="field"><label>Spare parts on hand</label><textarea id="f-spares" placeholder="e.g. Mech seal set - 1 No&#10;6316 bearing - 2 Nos"></textarea></div>
+
+        <div style="margin:16px 0 4px">
+          <div class="review-block" id="rev1"></div>
+          <div class="review-block" id="rev2"></div>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn-back" onclick="goStep(3)">← Back</button>
+          <button class="btn-save" id="save-btn" onclick="savePump()">Save pump</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://ugxohskbfgairfhpnclm.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVneG9oc2tiZmdhaXJmaHBuY2xtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3NDcyOTcsImV4cCI6MjA5NzMyMzI5N30.U-YHMtgYNvYckifnDjbUJHtQPYx_SZXs1jftnFTykrs';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let pumps = [];
+let activeFilter = 'all';
+let editId = null;
+let curStep = 1;
+
+// ── LOAD ──────────────────────────────────────────────────────────────────────
+async function loadPumps() {
+  const { data, error } = await sb.from('pumps').select('*').order('created_at', { ascending: false });
+  if (error) { showToast('Error loading pumps', 'err'); return; }
+  pumps = data || [];
+  updateSummary();
+  renderAll();
+}
+
+function daysSince(d) { return d ? Math.floor((Date.now() - new Date(d)) / 86400000) : 9999; }
+function isOverdue(p) { return p.pm_interval && daysSince(p.last_pm) > p.pm_interval; }
+function pmDueDays(p) { return p.pm_interval ? p.pm_interval - daysSince(p.last_pm) : null; }
+function statusClass(s) { return s === 'Running' ? 'run' : s === 'Fault' ? 'flt' : 'stp'; }
+
+function getBadge(p) {
+  if (p.status === 'Fault') return '<span class="badge flt">● Fault</span>';
+  if (p.status === 'Running' && isOverdue(p)) return '<span class="badge ov">⏰ PM Overdue</span>';
+  if (p.status === 'Running') return '<span class="badge run">● Running</span>';
+  return '<span class="badge stp">● Stopped</span>';
+}
+
+function updateSummary() {
+  document.getElementById('total-badge').textContent = pumps.length + ' pump' + (pumps.length !== 1 ? 's' : '');
+  document.getElementById('cnt-run').textContent = pumps.filter(p => p.status === 'Running').length;
+  document.getElementById('cnt-stp').textContent = pumps.filter(p => p.status === 'Stopped').length;
+  document.getElementById('cnt-flt').textContent = pumps.filter(p => p.status === 'Fault').length;
+  document.getElementById('cnt-pm').textContent = pumps.filter(p => isOverdue(p)).length;
+}
+
+// ── RENDER ALL ────────────────────────────────────────────────────────────────
+function renderAll() {
+  const sv = (document.getElementById('search').value || '').toLowerCase();
+  const filtered = pumps.filter(p => {
+    const matchS = !sv || (p.tag + p.name + (p.area || '') + (p.type || '') + (p.system || '')).toLowerCase().includes(sv);
+    const matchF = activeFilter === 'all' ||
+      (activeFilter === 'Running' && p.status === 'Running' && !isOverdue(p)) ||
+      (activeFilter === 'Stopped' && p.status === 'Stopped') ||
+      (activeFilter === 'Fault' && p.status === 'Fault') ||
+      (activeFilter === 'overdue' && isOverdue(p));
+    return matchS && matchF;
+  });
+
+  const el = document.getElementById('pump-list');
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div>No pumps match this filter.</div>';
+    return;
+  }
+  el.innerHTML = filtered.map((p, i) => {
+    const dd = pmDueDays(p);
+    const pct = p.pm_interval ? Math.min(100, Math.round(daysSince(p.last_pm) / p.pm_interval * 100)) : 0;
+    const pmCol = pct >= 100 ? '#e84040' : pct >= 75 ? '#f0a020' : '#1db980';
+    return `<div class="pump-card" id="pcard-${p.id}" onclick="toggleCard('${p.id}')">
+  <div class="pc-top">
+    <div><div class="pc-name">${p.name}</div><div class="pc-id">${p.tag} · ${p.area || '—'}</div></div>
+    ${getBadge(p)}
+  </div>
+  <div class="pc-meta">
+    <div class="pc-meta-item"><strong>${p.type || '—'}</strong></div>
+    ${p.motor_kw ? `<div class="pc-meta-item"><strong>${p.motor_kw}</strong> kW</div>` : ''}
+    ${p.flow_lph ? `<div class="pc-meta-item"><strong>${Number(p.flow_lph).toLocaleString()}</strong> LPH</div>` : ''}
+    ${p.system ? `<div class="pc-meta-item">${p.system}</div>` : ''}
+  </div>
+  <div class="pc-expand">
+    <div class="sec-label">Motor</div>
+    <div class="detail-grid">
+      <div class="drow"><div class="drow-label">Power</div><div class="drow-val">${p.motor_kw || '—'} kW</div></div>
+      <div class="drow"><div class="drow-label">Speed</div><div class="drow-val">${p.motor_rpm || '—'} RPM</div></div>
+      <div class="drow"><div class="drow-label">Voltage</div><div class="drow-val">${p.voltage || '—'}</div></div>
+      <div class="drow"><div class="drow-label">IE Frame</div><div class="drow-val">${p.ie_frame || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Motor brand</div><div class="drow-val">${p.motor_brand || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Drive</div><div class="drow-val">${p.drive || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Brg DE</div><div class="drow-val">${p.bearing_de || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Brg NDE</div><div class="drow-val">${p.bearing_nde || '—'}</div></div>
+    </div>
+    <div class="sec-label">Pump</div>
+    <div class="detail-grid">
+      <div class="drow"><div class="drow-label">Brand</div><div class="drow-val">${p.pump_brand || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Fluid</div><div class="drow-val">${p.fluid || '—'}</div></div>
+      <div class="drow"><div class="drow-label">Flow</div><div class="drow-val">${p.flow_lph ? Number(p.flow_lph).toLocaleString() + ' LPH' : '—'}</div></div>
+      <div class="drow"><div class="drow-label">Head</div><div class="drow-val">${p.head_m || '—'} m</div></div>
+      <div class="drow"><div class="drow-label">Seal</div><div class="drow-val">${p.seal_type || '—'}</div></div>
+    </div>
+    ${p.remarks ? `<div class="sec-label">Remarks</div><div style="font-size:12px;color:var(--text2);padding:6px 0">${p.remarks}</div>` : ''}
+    <div class="sec-label">PM status</div>
+    <div class="pm-wrap">
+      <div class="pm-meta">
+        <span>Last PM: ${p.last_pm || '—'}</span>
+        <span style="color:${pmCol};font-weight:600">${dd === null ? '—' : dd <= 0 ? 'Overdue ' + Math.abs(dd) + 'd' : 'Due in ' + dd + 'd'}</span>
+      </div>
+      ${p.pm_interval ? `<div class="pm-bar-bg"><div class="pm-bar" style="width:${pct}%;background:${pmCol}"></div></div>` : ''}
+      ${p.technician ? `<div style="font-size:11px;color:var(--text2);margin-top:5px">Technician: ${p.technician}</div>` : ''}
+      ${p.spares ? `<div style="font-size:11px;color:var(--text2);margin-top:3px;white-space:pre-line">${p.spares}</div>` : ''}
+    </div>
+    <div class="action-row">
+      <div class="action-btn" onclick="event.stopPropagation();editPump('${p.id}')">✏ Edit</div>
+      <div class="action-btn del" onclick="event.stopPropagation();deletePump('${p.id}','${p.name}')">🗑 Delete</div>
+    </div>
+  </div>
+</div>`;
+  }).join('');
+}
+
+function toggleCard(id) {
+  document.getElementById('pcard-' + id)?.classList.toggle('expanded');
+}
+
+// ── FILTERS ───────────────────────────────────────────────────────────────────
+function setFilter(val, el) {
+  activeFilter = val;
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderAll();
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+let activeTab = 'all';
+function switchTab(name, el) {
+  activeTab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['all', 'area', 'type', 'pm'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+  });
+  if (name === 'area') renderAreaTab();
+  if (name === 'type') renderTypeTab();
+  if (name === 'pm') renderPmTab();
+}
+
+function renderAreaTab() {
+  const areas = [...new Set(pumps.map(p => p.area).filter(Boolean))];
+  document.getElementById('tab-area').innerHTML = areas.map(area => {
+    const ps = pumps.filter(p => p.area === area);
+    return `<div class="area-sec">
+  <div class="area-sec-title">${area} — ${ps.length} pump${ps.length !== 1 ? 's' : ''}</div>
+  ${ps.map(p => `<div class="area-row" onclick="switchTab('all',document.querySelector('.tab'));document.getElementById('search').value='${p.tag}';renderAll()">
+    <div><div class="area-pump-name">${p.name}</div><div class="area-pump-sub">${p.tag} · ${p.type || '—'} · ${p.motor_kw || '?'}kW</div></div>
+    ${getBadge(p)}
+  </div>`).join('')}
+</div>`;
+  }).join('') || '<div class="empty"><div class="empty-icon">📋</div>No pumps added yet.</div>';
+}
+
+function renderTypeTab() {
+  const types = [...new Set(pumps.map(p => p.type).filter(Boolean))];
+  document.getElementById('tab-type').innerHTML = types.map(type => {
+    const ps = pumps.filter(p => p.type === type);
+    return `<div class="area-sec">
+  <div class="area-sec-title">${type} — ${ps.length} pump${ps.length !== 1 ? 's' : ''}</div>
+  ${ps.map(p => `<div class="area-row">
+    <div><div class="area-pump-name">${p.name}</div><div class="area-pump-sub">${p.tag} · ${p.area || '—'} · ${p.motor_kw || '?'}kW</div></div>
+    ${getBadge(p)}
+  </div>`).join('')}
+</div>`;
+  }).join('') || '<div class="empty"><div class="empty-icon">⚙️</div>No pumps added yet.</div>';
+}
+
+function renderPmTab() {
+  const sorted = [...pumps].sort((a, b) => (pmDueDays(a) || 999) - (pmDueDays(b) || 999));
+  document.getElementById('tab-pm').innerHTML = sorted.length ? sorted.map(p => {
+    const dd = pmDueDays(p);
+    const pct = p.pm_interval ? Math.min(100, Math.round(daysSince(p.last_pm) / p.pm_interval * 100)) : 0;
+    const col = pct >= 100 ? '#e84040' : pct >= 75 ? '#f0a020' : '#1db980';
+    return `<div class="pm-item">
+  <div class="pm-item-top">
+    <div><div class="pm-name">${p.name}</div><div class="pm-sub">${p.tag} · ${p.area || '—'}</div></div>
+    <div class="pm-due" style="color:${col}">${dd === null ? '—' : dd <= 0 ? '⚠ Overdue ' + Math.abs(dd) + 'd' : 'Due in ' + dd + 'd'}</div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin:6px 0 4px">
+    <span>Last: ${p.last_pm || '—'}</span><span>Interval: ${p.pm_interval ? p.pm_interval + 'd' : '—'}</span>
+  </div>
+  ${p.pm_interval ? `<div class="pm-bar-bg"><div class="pm-bar" style="width:${pct}%;background:${col}"></div></div>` : ''}
+</div>`;
+  }).join('') : '<div class="empty"><div class="empty-icon">📅</div>No pumps added yet.</div>';
+}
+
+// ── FORM ──────────────────────────────────────────────────────────────────────
+function openForm(id) {
+  editId = id || null;
+  document.getElementById('modal-title').textContent = id ? 'Edit pump' : 'Add new pump';
+  if (!id) resetForm();
+  document.getElementById('overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  goStep(1, true);
+}
+
+function closeForm() {
+  document.getElementById('overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function resetForm() {
+  ['f-tag','f-name','f-system','f-kw','f-rpm','f-volt','f-mbrand','f-bde','f-bnde','f-pbrand','f-flow','f-head','f-fluid','f-remarks','f-tech','f-spares'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('f-area').value = '';
+  document.getElementById('f-ie').value = '';
+  document.getElementById('f-pmint').value = '';
+  document.getElementById('f-lastpm').value = new Date().toISOString().split('T')[0];
+  ['rg-type','rg-drive','rg-seal'].forEach(g => {
+    const btns = document.querySelectorAll('#' + g + ' .rbtn');
+    btns.forEach((b, i) => b.classList.toggle('active', i === 0));
+  });
+  const statusBtns = document.querySelectorAll('#rg-status .rbtn');
+  statusBtns.forEach((b, i) => b.classList.toggle('active', i === 0));
+}
+
+function editPump(id) {
+  const p = pumps.find(x => x.id === id);
+  if (!p) return;
+  openForm(id);
+  setTimeout(() => {
+    document.getElementById('f-tag').value = p.tag || '';
+    document.getElementById('f-name').value = p.name || '';
+    document.getElementById('f-area').value = p.area || '';
+    document.getElementById('f-system').value = p.system || '';
+    document.getElementById('f-kw').value = p.motor_kw || '';
+    document.getElementById('f-rpm').value = p.motor_rpm || '';
+    document.getElementById('f-volt').value = p.voltage || '';
+    document.getElementById('f-ie').value = p.ie_frame || '';
+    document.getElementById('f-mbrand').value = p.motor_brand || '';
+    document.getElementById('f-bde').value = p.bearing_de || '';
+    document.getElementById('f-bnde').value = p.bearing_nde || '';
+    document.getElementById('f-pbrand').value = p.pump_brand || '';
+    document.getElementById('f-flow').value = p.flow_lph || '';
+    document.getElementById('f-head').value = p.head_m || '';
+    document.getElementById('f-fluid').value = p.fluid || '';
+    document.getElementById('f-remarks').value = p.remarks || '';
+    document.getElementById('f-lastpm').value = p.last_pm || '';
+    document.getElementById('f-pmint').value = p.pm_interval || '';
+    document.getElementById('f-tech').value = p.technician || '';
+    document.getElementById('f-spares').value = p.spares || '';
+    setRadio('rg-type', p.type);
+    setRadio('rg-drive', p.drive);
+    setRadio('rg-seal', p.seal_type);
+    setRadio('rg-status', p.status);
+  }, 50);
+}
+
+function setRadio(groupId, val) {
+  if (!val) return;
+  document.querySelectorAll('#' + groupId + ' .rbtn').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim() === val);
+  });
+}
+
+function pick(el, groupId) {
+  document.querySelectorAll('#' + groupId + ' .rbtn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function getRadio(groupId) {
+  return document.querySelector('#' + groupId + ' .rbtn.active')?.textContent.trim() || '';
+}
+
+function v(id) { return (document.getElementById(id)?.value || '').trim(); }
+
+function validateStep(step) {
+  let ok = true;
+  if (step === 1) {
+    [['tag','e-tag'],['name','e-name'],['area','e-area']].forEach(([f, e]) => {
+      const val = v('f-' + f);
+      document.getElementById(e).classList.toggle('show', !val);
+      if (!val) ok = false;
+    });
+  }
+  return ok;
+}
+
+function goStep(n, force) {
+  if (!force && n > curStep && !validateStep(curStep)) return;
+  if (n === 4) buildReview();
+  document.querySelectorAll('.form-sec').forEach((s, i) => s.classList.toggle('active', i === n - 1));
+  for (let i = 1; i <= 4; i++) {
+    const s = document.getElementById('fs' + i);
+    s.classList.toggle('active', i === n);
+    s.classList.toggle('done', i < n);
+  }
+  curStep = n;
+  document.querySelector('.modal').scrollTop = 0;
+}
+
+function buildReview() {
+  document.getElementById('rev1').innerHTML = `
+<div class="review-title">Identification & pump</div>
+<div class="review-row"><span class="review-label">Tag</span><span class="review-val">${v('f-tag') || '—'}</span></div>
+<div class="review-row"><span class="review-label">Name</span><span class="review-val">${v('f-name') || '—'}</span></div>
+<div class="review-row"><span class="review-label">Area</span><span class="review-val">${v('f-area') || '—'}</span></div>
+<div class="review-row"><span class="review-label">Type</span><span class="review-val">${getRadio('rg-type')}</span></div>
+<div class="review-row"><span class="review-label">Brand</span><span class="review-val">${v('f-pbrand') || '—'}</span></div>
+<div class="review-row"><span class="review-label">Status</span><span class="review-val">${getRadio('rg-status')}</span></div>`;
+  document.getElementById('rev2').innerHTML = `
+<div class="review-title">Motor & PM</div>
+<div class="review-row"><span class="review-label">Motor</span><span class="review-val">${v('f-kw') ? v('f-kw') + 'kW' : '—'}${v('f-rpm') ? ' / ' + v('f-rpm') + 'RPM' : ''}</span></div>
+<div class="review-row"><span class="review-label">Bearings DE/NDE</span><span class="review-val">${v('f-bde') || '—'} / ${v('f-bnde') || '—'}</span></div>
+<div class="review-row"><span class="review-label">Last PM</span><span class="review-val">${v('f-lastpm') || '—'}</span></div>
+<div class="review-row"><span class="review-label">PM interval</span><span class="review-val">${document.getElementById('f-pmint').options[document.getElementById('f-pmint').selectedIndex]?.text || '—'}</span></div>`;
+}
+
+async function savePump() {
+  const btn = document.getElementById('save-btn');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+  const data = {
+    tag: v('f-tag'), name: v('f-name'), area: v('f-area'), system: v('f-system'),
+    type: getRadio('rg-type'), status: getRadio('rg-status'),
+    motor_kw: v('f-kw') ? parseFloat(v('f-kw')) : null,
+    motor_rpm: v('f-rpm') ? parseFloat(v('f-rpm')) : null,
+    voltage: v('f-volt'), ie_frame: v('f-ie'), motor_brand: v('f-mbrand'),
+    drive: getRadio('rg-drive'),
+    bearing_de: v('f-bde'), bearing_nde: v('f-bnde'),
+    pump_brand: v('f-pbrand'),
+    flow_lph: v('f-flow') ? parseFloat(v('f-flow')) : null,
+    head_m: v('f-head') ? parseFloat(v('f-head')) : null,
+    fluid: v('f-fluid'), seal_type: getRadio('rg-seal'),
+    last_pm: v('f-lastpm') || null,
+    pm_interval: v('f-pmint') ? parseInt(v('f-pmint')) : null,
+    technician: v('f-tech'), spares: v('f-spares'), remarks: v('f-remarks'),
+  };
+  let error;
+  if (editId) {
+    ({ error } = await sb.from('pumps').update(data).eq('id', editId));
+  } else {
+    ({ error } = await sb.from('pumps').insert([data]));
+  }
+  btn.textContent = 'Save pump';
+  btn.disabled = false;
+  if (error) { showToast('Save failed: ' + error.message, 'err'); return; }
+  showToast(editId ? 'Pump updated ✓' : 'Pump saved ✓', 'ok');
+  closeForm();
+  loadPumps();
+}
+
+async function deletePump(id, name) {
+  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+  const { error } = await sb.from('pumps').delete().eq('id', id);
+  if (error) { showToast('Delete failed', 'err'); return; }
+  showToast('Pump deleted', 'ok');
+  loadPumps();
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (type || '');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadPumps();
+</script>
+</body>
+</html>
